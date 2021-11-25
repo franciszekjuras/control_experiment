@@ -3,10 +3,10 @@ class Struct:
 
 arduino = Struct()
 arduino.portmap = {
-    "pulseX": 2,
+    "pulseX": 5,
     "pulseY": 3,
     "pulseZ": 4,
-    "constZ": 5,
+    "constZ": 2,
     "daqTrig": 9,
     "pumpEn": 7,
     "probeEn": 8,  
