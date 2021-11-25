@@ -22,25 +22,25 @@ if (len(sys.argv) > 1 and sys.argv[1] in ["--list", "-l"]):
     sys.exit()
 
 prepulse_t = 0.
-meas_t = 200
+meas_t = 500
 daq = Measurement("Dev1", channels="ai0:5", freq=7e3, time=(meas_t/1e3), trig="PFI2", t0=-0/1e3)
 pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
 pulsegen.time_unit = "ms"
 # pulsegen.reset()
 pulsegen.xon("pumpEn")
 pulsegen.add("pumpEn", (-200, -5))
-pulsegen.add("probeEn", (-200, 150))
+pulsegen.add("probeEn", (-200, 300))
 pulsegen.add("daqTrig", (0, 0.01))
 # pulsegen.add("constZ", (0, 20))
 
 lockin = Srs(rm, "Lock-in")
 wavemeter = Wavemeter(rm, "Wavemeter")
 
-print(f"Laser frequency: {1e3*wavemeter.frequency(1):.3f} GHz")
+print(f"Laser frequency: {1e3 * wavemeter.frequency(1):.3f} GHz")
 
 lockin_settings = {
     'source': 'internal', 'reserve': 'low noise',
-    'frequency': 5e4, 'phase': 0, 'sensitivity': '2 mV',
+    'frequency': 5e4, 'phase': -21., 'sensitivity': '2 mV',
     'time_constant': '300 us', 'filter_slope': '24 dB/oct'
 }
 lockin.setup(lockin_settings)
@@ -51,7 +51,7 @@ lockin.auxout(3, 0.5)
 plt.ion()
 fig, axs = plt.subplots(2, squeeze=False)
 axs = fig.axes
-avg = Average()
+avgs = [Average() for _ in range(5)]
 
 for i in range(5):
     daq.start()
@@ -66,7 +66,19 @@ for i in range(5):
     axs[1].plot(*series[2].xy)
     axs[1].plot(*series[3].xy)
     axs[1].plot(*series[4].xy)
+    for avg, ser in zip(avgs, series):
+        avg.add(ser.y)
     fig.canvas.draw()
     fig.canvas.flush_events()
+
+series_avg = [Series(avg.value, series[0].x) for avg in avgs]
+fig, axs = plt.subplots(2)
+axs[0].plot(*series_avg[0].xy)
+axs[0].plot(*series_avg[1].xy)
+axs[1].plot(*series_avg[2].xy)
+axs[1].plot(*series_avg[3].xy)
+axs[1].plot(*series_avg[4].xy)
+fig.canvas.draw()
+fig.canvas.flush_events()
 
 input("Press enter to exit...")
