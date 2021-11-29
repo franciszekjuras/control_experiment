@@ -8,7 +8,7 @@ arduino.portmap = {
     "pulseZ": 4,
     "constZ": 2,
     "daqTrig": 9,
-    "pumpEn": 7,
+    "pumpDis": 7,
     "probeEn": 8,  
     "extra": 6  
 }
