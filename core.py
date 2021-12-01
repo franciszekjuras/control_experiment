@@ -5,10 +5,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import sys
+import pickle
+from datetime import datetime
 import constants
 from labpy.arduinopulsegen import ArduinoPulseGen
 from labpy.daqmx import Measurement
-from labpy.series import Series, from2darray, Average
+from labpy import series
+from labpy.series import Series, Average, from2darray
 from labpy.srs import Srs
 from labpy.wavemeter import Wavemeter
 from labpy.keithley_cs import KeithleyCS
@@ -16,21 +19,24 @@ from labpy.keithley_cs import KeithleyCS
 rm = pyvisa.ResourceManager()
 
 def main():
-    if len(sys.argv) > 1:
-        list_resources()
+    comm = sys.argv[1:]
+    exec_aux_commands(comm)
 
-    prepulse_t = 0.
-    meas_t = 500
-    daq = Measurement("Dev1", channels="ai0:6", freq=7e3, time=(meas_t/1e3), trig="PFI2", t0=-0/1e3)
+    params = {}
+    meas_t = 300
+    t0 = -50/1e3
+    daq = Measurement("Dev1", channels="ai0:6", freq=40e3, time=(meas_t/1e3)-t0, trig="PFI2", t0=t0)
 
     pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
     pulsegen.time_unit = "ms"
     # pulsegen.reset()
-    pulsegen.xon(("pumpDis", "constZ"))
+    pulsegen.xon(("pumpDis"))
     pulsegen.add("pumpDis", (-200, -5))
     pulsegen.add("probeEn", (0, 300))
     pulsegen.add("daqTrig", (0, 0.01))
-    pulsegen.add("constZ", (10, 15, 50, 60, 70, 80))
+    constZt = [-210, 0]
+    constZt = sum([[v, v + 0.01] for v in constZt],[])
+    pulsegen.add("constZ", constZt)
 
     lockin = Srs(rm, "Lock-in")
     lockin_settings = {
@@ -46,10 +52,11 @@ def main():
     curr_src = KeithleyCS(rm, "KEITHLEY")
     curr_src.set_remote_only()
     curr_src.current = 0.
-    curr_src.set_sweep(np.array([0, 50, 100]) * 1e-6)
+    curr_src.set_sweep(np.array([0, 100]) * 1e-6)
 
     wavemeter = Wavemeter(rm, "Wavemeter")
-    print(f"Laser frequency: {1e3 * wavemeter.frequency(1):.3f} GHz")
+    params["laser freq THz"] = wavemeter.frequency(1)
+    print(f"Laser frequency: {1e3*params['laser freq THz']:.3f} GHz")
 
     plt.ion()
     fig, axs = plt.subplots(3)
@@ -57,41 +64,58 @@ def main():
     avgs = [Average() for _ in range(daq.chs_n)]
     time.sleep(0.1)
 
-    for i in range(5):
+    t = np.linspace(daq.t0, daq.time + daq.t0, daq.samples, endpoint=False)
+
+    for i in range(3):
         curr_src.init()
         daq.start()
         time.sleep(-daq.t0)
         pulsegen.run()
-        data = daq.read()
-        series = from2darray(data, (daq.t0, daq.time))
+        data = daq.read(10)
+        series = from2darray(data, t)
         for avg, ser in zip(avgs, series):
             avg.add(ser.y)
         for ax in axs:
             ax.clear()
-        for i, j in zip((0,0,1,1,1,2), range(daq.chs_n)):
-            axs[i].plot(*series[j].xy)
+        for i, ser in zip((0,0,1,1,1,2), series):
+            axs[i].plot(*ser.xy)
+        axs[1].set_xbound([-0.1e-3, 0.2e-3])
+        axs[2].set_xbound([-0.1e-3, 0.2e-3])
         fig.canvas.draw()
         fig.canvas.flush_events()
 
-    series_avg = [Series(avg.value, series[0].x) for avg in avgs]
+    avgs = {k:avg.value for (k, avg) in zip(constants.daq.labels, avgs)}
+    avgser = {key:Series(avg, t) for (key, avg) in avgs.items()}
     fig, axs = plt.subplots(3)
-    for i, j in zip((0,0,1,1,1,2), range(6)):
-        axs[i].plot(*series_avg[j].xy)
+    for i, ser in zip((0,0,1,1,1,2), avgser.values()):
+        axs[i].plot(*ser.xy)
     fig.canvas.draw()
     fig.canvas.flush_events()
 
+    if is_common_item(("-s","--save"), comm):
+        save_dir = "data/tests/"
+        with open(save_dir + datetime.now().strftime("SINGLE%y%m%d%H%M%S.pickle")) as f:
+            pickle.dump({"data": avgser, "params": params}, f)
+
     input("Press enter to exit...")
 
-def list_resources():
-    if sys.argv[1] in ["--list", "-l"]:
+def is_common_item(a, b):
+    return any(i in a for i in b)
+
+def exec_aux_commands(com=[]):
+    exit = False
+    if is_common_item(com, ["--list", "-l"]):
+        exit = True
         res = [(str(inst.alias), str(inst.resource_name)) for inst in rm.list_resources_info().values()]
         res.insert(0, ("Alias", "Resource name"))
         for el in res:
             print(f"{el[0]:>15}  {el[1]}")
-    elif sys.argv[1] in ["--aom", "-a"]:
+    if is_common_item(com, ["--aom", "-a"]):
+        exit = True
         pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
         pulsegen.xon(("probeEn"))
-    sys.exit()
+    if exit:
+        sys.exit(0)
 
 if(__name__ == "__main__"):
     main()
