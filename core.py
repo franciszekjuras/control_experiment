@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import time
 import sys
 import pickle
+import argparse
 from datetime import datetime
 import constants
 from labpy.arduinopulsegen import ArduinoPulseGen
@@ -19,8 +20,12 @@ from labpy.keithley_cs import KeithleyCS
 rm = pyvisa.ResourceManager()
 
 def main():
-    comm = sys.argv[1:]
-    exec_aux_commands(comm)
+    parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence")
+    parser.add_argument("--list", "-l", action="store_true")
+    parser.add_argument("--aom", "-a", action="store_true")
+    parser.add_argument("--save", "-s", nargs='?', const="data/tests/", default=None)
+    args = parser.parse_args()
+    exec_aux_commands(args)
     params = {}
     s = {}
 
@@ -97,25 +102,21 @@ def main():
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-    if is_common_item(("-s","--save"), comm):
-        save_dir = "data/tests/"
-        with open(save_dir + datetime.now().strftime("SINGLE%y%m%d%H%M%S.pickle")) as f:
+    if args.save is not None:
+        with open(args.save + datetime.now().strftime("SINGLE%y%m%d%H%M%S.pickle")) as f:
             pickle.dump({"data": avgser, "params": params, "settings": s}, f)
 
     input("Press enter to exit...")
 
-def is_common_item(a, b):
-    return any(i in a for i in b)
-
-def exec_aux_commands(com=[]):
+def exec_aux_commands(args):
     exit = False
-    if is_common_item(com, ["--list", "-l"]):
+    if args.list:
         exit = True
         res = [(str(inst.alias), str(inst.resource_name)) for inst in rm.list_resources_info().values()]
         res.insert(0, ("Alias", "Resource name"))
         for el in res:
             print(f"{el[0]:>15}  {el[1]}")
-    if is_common_item(com, ["--aom", "-a"]):
+    if args.aom:
         exit = True
         pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
         pulsegen.xon(("probeEn"))
