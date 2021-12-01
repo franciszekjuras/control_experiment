@@ -6,11 +6,18 @@ arduino.portmap = {
     "pulseX": 2,
     "pulseY": 3,
     "pulseZ": 4,
-    "constZ": 5,
+    "constZTrig": 5,
     "daqTrig": 9,
-    "pumpDis": 7,
+    "pumpEn": 7,
     "probeEn": 8,  
     "extra": 6  
+}
+
+lockin = Struct()
+lockin.auxout = {
+    "aom1": 1,
+    "aom2": 2,
+    "pulseAmp": 3
 }
 
 daq = Struct()

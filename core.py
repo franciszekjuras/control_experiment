@@ -21,38 +21,43 @@ rm = pyvisa.ResourceManager()
 def main():
     comm = sys.argv[1:]
     exec_aux_commands(comm)
-
     params = {}
-    meas_t = 300
-    t0 = -50/1e3
-    daq = Measurement("Dev1", channels="ai0:6", freq=40e3, time=(meas_t/1e3)-t0, trig="PFI2", t0=t0)
+    s = {}
+
+    s["daq"] = {"chs_n": 7, "freq":40e3, "time": 300e-3, "t0": -50e-3}
+    cs = s["daq"]
+    daq = Measurement("Dev1", channels="ai0:"+str(cs["chs_n"]-1)
+        , freq=cs["freq"], time=cs["time"]-cs["t0"], trig="PFI2", t0=cs["t0"])
 
     pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
     pulsegen.time_unit = "ms"
-    # pulsegen.reset()
-    pulsegen.xon(("pumpDis"))
-    pulsegen.add("pumpDis", (-200, -5))
-    pulsegen.add("probeEn", (0, 300))
-    pulsegen.add("daqTrig", (0, 0.01))
+    pulsegen.xon(("pumpEn")) # Reversed polarity
     constZt = [-210, 0]
     constZt = sum([[v, v + 0.01] for v in constZt],[])
-    pulsegen.add("constZ", constZt)
+    s["timing"] = {
+        "pumpEn": (-200, -5), "probeEn": (0, 300),
+        "daqTrig": (0, 0.01), "constZTrig": constZt
+    }
+    for k, v in s["timing"]:
+        pulsegen.add(k, v)
 
-    lockin = Srs(rm, "Lock-in")
-    lockin_settings = {
+    lockin = Srs(rm, "Lock-in", auxout_map=constants.lockin.auxout)
+    s["lockin"] = {
         'source': 'internal', 'reserve': 'low noise',
         'frequency': 5e4, 'phase': -21., 'sensitivity': '2 mV',
         'time_constant': '300 us', 'filter_slope': '24 dB/oct'
     }
-    lockin.setup(lockin_settings)
-    lockin.auxout(1, 6.)
-    lockin.auxout(2, 6.)
-    lockin.auxout(3, 0.5)
+    s["auxout"] = {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
+    lockin.setup(s["lockin"])
+    for k, v in s["auxout"]:
+        lockin.auxout(k, v)
 
+    pulse_current = 100e-6
+    s["current source"] = {"pulse current": pulse_current}
     curr_src = KeithleyCS(rm, "KEITHLEY")
     curr_src.set_remote_only()
     curr_src.current = 0.
-    curr_src.set_sweep(np.array([0, 100]) * 1e-6)
+    curr_src.set_sweep((0, pulse_current))
 
     wavemeter = Wavemeter(rm, "Wavemeter")
     params["laser freq THz"] = wavemeter.frequency(1)
@@ -95,7 +100,7 @@ def main():
     if is_common_item(("-s","--save"), comm):
         save_dir = "data/tests/"
         with open(save_dir + datetime.now().strftime("SINGLE%y%m%d%H%M%S.pickle")) as f:
-            pickle.dump({"data": avgser, "params": params}, f)
+            pickle.dump({"data": avgser, "params": params, "settings": s}, f)
 
     input("Press enter to exit...")
 
