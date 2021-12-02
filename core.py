@@ -7,6 +7,7 @@ import time
 import sys
 import pickle
 import argparse
+from pathlib import Path
 from datetime import datetime
 import constants
 from labpy.arduinopulsegen import ArduinoPulseGen
@@ -24,6 +25,7 @@ def main():
     parser.add_argument("--list", "-l", action="store_true")
     parser.add_argument("--aom", "-a", action="store_true")
     parser.add_argument("--save", "-s", nargs='?', const="data/tests/", default=None)
+    parser.add_argument("--comment", "-c", default="")
     args = parser.parse_args()
     exec_aux_commands(args)
     params = {}
@@ -104,7 +106,10 @@ def main():
     fig.canvas.flush_events()
 
     if args.save is not None:
-        with open(args.save + datetime.now().strftime("SINGLE%y%m%d%H%M%S.pickle")) as f:
+        savepath = Path(args.save + "SINGLE" + datetime.now().strftime("%y%m%d%H%M%S") + args.comment + ".pickle")
+        print(savepath.parent)
+        savepath.parent.mkdir(exist_ok=True, parents=True)
+        with savepath.open("wb") as f:
             pickle.dump({"data": avgser, "params": params, "settings": s}, f)
 
     input("Press enter to exit...")
