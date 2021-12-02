@@ -43,7 +43,7 @@ def main():
         "pumpEn": (-200, -5), "probeEn": (0, 300),
         "daqTrig": (0, 0.01), "constZTrig": constZt
     }
-    for k, v in s["timing"]:
+    for k, v in s["timing"].items():
         pulsegen.add(k, v)
 
     lockin = Srs(rm, "Lock-in", auxout_map=constants.lockin.auxout)
@@ -54,7 +54,7 @@ def main():
     }
     s["auxout"] = {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
     lockin.setup(s["lockin"])
-    for k, v in s["auxout"]:
+    for k, v in s["auxout"].items():
         lockin.auxout(k, v)
 
     pulse_current = 100e-6
@@ -76,7 +76,8 @@ def main():
 
     t = np.linspace(daq.t0, daq.time + daq.t0, daq.samples, endpoint=False)
 
-    for i in range(3):
+    s["avarages"] = 3
+    for i in range(s["avarages"]):
         curr_src.init()
         daq.start()
         time.sleep(-daq.t0)
