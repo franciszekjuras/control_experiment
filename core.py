@@ -72,6 +72,7 @@ def main():
 
     plt.ion()
     fig, axs = plt.subplots(3)
+    fig.set_tight_layout(True)
     axs = fig.axes
     avgs = [Average() for _ in range(daq.chs_n)]
     time.sleep(0.1)
@@ -100,6 +101,7 @@ def main():
     avgs = {k:avg.value for (k, avg) in zip(constants.daq.labels, avgs)}
     avgser = {key:Series(avg, t) for (key, avg) in avgs.items()}
     fig, axs = plt.subplots(3)
+    fig.set_tight_layout(True)
     for i, ser in zip((0,0,1,1,1,2), avgser.values()):
         axs[i].plot(*ser.xy)
     fig.canvas.draw()
