@@ -20,17 +20,7 @@ from labpy.keithley_cs import KeithleyCS
 
 rm = pyvisa.ResourceManager()
 
-def main():
-    parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence"
-        , formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-s", "--save", nargs='?', const="tests", default=None
-        , help="Save data to a file in 'data/tests' or in 'data/DIR' if DIR is specified", metavar="DIR(opt)")
-    parser.add_argument("-c", "--comment", default="", help="Append COMMENT to saved file name")
-    parser.add_argument("-r", "--repeat", type=int, default=3
-        , help="Repeat mesurement (average) N times", metavar='N')
-    parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
-    parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
-    args = parser.parse_args()
+def main(args):
     exec_aux_commands(args)
     params = {}
     s = {}
@@ -138,4 +128,14 @@ def exec_aux_commands(args):
         sys.exit(0)
 
 if(__name__ == "__main__"):
-    main()
+    parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence"
+        , formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-s", "--save", nargs='?', const="tests", default=None
+        , help="Save data to a file in 'data/tests' or in 'data/DIR' if DIR is specified", metavar="DIR(opt)")
+    parser.add_argument("-c", "--comment", default="", help="Append COMMENT to saved file name")
+    parser.add_argument("-r", "--repeat", type=int, default=3
+        , help="Repeat mesurement (average) N times", metavar='N')
+    parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
+    parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
+    args = parser.parse_args()
+    main(args)
