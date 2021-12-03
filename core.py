@@ -21,17 +21,21 @@ from labpy.keithley_cs import KeithleyCS
 rm = pyvisa.ResourceManager()
 
 def main():
-    parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence")
-    parser.add_argument("--list", "-l", action="store_true")
-    parser.add_argument("--aom", "-a", action="store_true")
-    parser.add_argument("--save", "-s", nargs='?', const="data/tests/", default=None)
-    parser.add_argument("--comment", "-c", default="")
+    parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence"
+        , formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-s", "--save", nargs='?', const="tests", default=None
+        , help="Save data to a file in 'data/tests' or in 'data/DIR' if DIR is specified", metavar="DIR(opt)")
+    parser.add_argument("-c", "--comment", default="", help="Append COMMENT to saved file name")
+    parser.add_argument("-r", "--repeat", type=int, default=3
+        , help="Repeat mesurement (average) N times", metavar='N')
+    parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
+    parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
     args = parser.parse_args()
     exec_aux_commands(args)
     params = {}
     s = {}
 
-    s["daq"] = {"chs_n": 7, "freq":40e3, "time": 300e-3, "t0": -50e-3}
+    s["daq"] = {"chs_n": 6, "freq":40e3, "time": 300e-3, "t0": -100e-3}
     cs = s["daq"]
     daq = Measurement("Dev1", channels="ai0:"+str(cs["chs_n"]-1)
         , freq=cs["freq"], time=cs["time"]-cs["t0"], trig="PFI2", t0=cs["t0"])
@@ -51,7 +55,7 @@ def main():
     lockin = Srs(rm, "Lock-in", auxout_map=constants.lockin.auxout)
     s["lockin"] = {
         'source': 'internal', 'reserve': 'low noise',
-        'frequency': 5e4, 'phase': -21., 'sensitivity': '2 mV',
+        'frequency': 5e4, 'phase': -21., 'sensitivity': '100 uV',
         'time_constant': '300 us', 'filter_slope': '24 dB/oct'
     }
     s["auxout"] = {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
@@ -67,11 +71,12 @@ def main():
     curr_src.set_sweep((0, pulse_current))
 
     wavemeter = Wavemeter(rm, "Wavemeter")
-    params["laser freq THz"] = wavemeter.frequency(1)
-    print(f"Laser frequency: {1e3*params['laser freq THz']:.3f} GHz")
+    params["moglabs freq"], params["dl100 freq"] = wavemeter.frequency((1,2))
+    print(f"Moglabs (probe/pump) frequency: {params['moglabs freq']:.6f} THz\n"
+        f"DL100 (pump/repump) frequency: {params['dl100 freq']:.6f} THz")
 
     plt.ion()
-    fig, axs = plt.subplots(3)
+    fig, axs = plt.subplots(2)
     fig.set_tight_layout(True)
     axs = fig.axes
     avgs = [Average() for _ in range(daq.chs_n)]
@@ -79,7 +84,7 @@ def main():
 
     t = np.linspace(daq.t0, daq.time + daq.t0, daq.samples, endpoint=False)
 
-    s["avarages"] = 3
+    s["avarages"] = args.repeat
     for i in range(s["avarages"]):
         curr_src.init()
         daq.start()
@@ -91,24 +96,25 @@ def main():
             avg.add(ser.y)
         for ax in axs:
             ax.clear()
-        for i, ser in zip((0,0,1,1,1,2), series):
+        for i, ser in zip((0,0,1,1,1), series):
             axs[i].plot(*ser.xy)
-        axs[1].set_xbound([-0.1e-3, 0.2e-3])
-        axs[2].set_xbound([-0.1e-3, 0.2e-3])
+        # axs[1].set_xbound([-0.1e-3, 0.2e-3])
         fig.canvas.draw()
         fig.canvas.flush_events()
 
     avgs = {k:avg.value for (k, avg) in zip(constants.daq.labels, avgs)}
     avgser = {key:Series(avg, t) for (key, avg) in avgs.items()}
-    fig, axs = plt.subplots(3)
-    fig.set_tight_layout(True)
-    for i, ser in zip((0,0,1,1,1,2), avgser.values()):
-        axs[i].plot(*ser.xy)
-    fig.canvas.draw()
-    fig.canvas.flush_events()
+    if s["avarages"] != 1:
+        fig, axs = plt.subplots(2)
+        fig.set_tight_layout(True)
+        for i, ser in zip((0,0,1,1,1), avgser.values()):
+            axs[i].plot(*ser.xy)
+        fig.canvas.draw()
+        fig.canvas.flush_events()
 
     if args.save is not None:
-        savepath = Path(args.save + "SINGLE" + datetime.now().strftime("%y%m%d%H%M%S") + args.comment + ".pickle")
+        savepath = Path("data/" + args.save.strip("/\\") + '/' + "SINGLE"
+            + datetime.now().strftime("%y%m%d%H%M%S") + args.comment + ".pickle")
         print(savepath.parent)
         savepath.parent.mkdir(exist_ok=True, parents=True)
         with savepath.open("wb") as f:

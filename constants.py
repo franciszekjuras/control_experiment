@@ -21,4 +21,4 @@ lockin.auxout = {
 }
 
 daq = Struct()
-daq.labels = ("x", "y", "mon1", "mon2", "probe", "sync")
+daq.labels = ("x", "y", "mon1", "mon2", "probe")
