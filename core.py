@@ -1,4 +1,3 @@
-import localpkgs
 import pyvisa
 import PyDAQmx as dmx
 import numpy as np
@@ -10,16 +9,40 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 import constants
-from labpy.arduinopulsegen import ArduinoPulseGen
-from labpy.daqmx import Measurement
-from labpy import series
-from labpy.series import Series, Average, from2darray
-from labpy.srs import Srs
-from labpy.wavemeter import Wavemeter
-from labpy.keithley_cs import KeithleyCS
+from labpy.devices import daqmx, arduinopulsegen, keithley_cs, srs, tb3000_aom_driver, wavemeter
+from labpy.types import Series, Average, NestedDict
 
-rm = pyvisa.ResourceManager()
+class Core:
+    def __init__(self, settings):
+        self.rm = pyvisa.ResourceManager()
+        self.s = NestedDict(settings)
+        self.params = {}
+        self.init_devices()
 
+    def init_devices(self):
+        self.daq = daqmx.DAQmx(**self.s['daq'])
+
+        timing = self.s['timing']
+        self.pulsegen = arduinopulsegen.ArduinoPulseGen(
+            self.rm, portmap=constants.arduino.portmap,  **timing)
+        self.pulsegen.xon(constants.arduino.reversed_polarity)
+        pulses = timing['pulses']
+        for k, seq in timing['triggers']:
+            pulses[k] = sum([[v, v + timing['trigger_width']] for v in seq],[])
+        for k, v in pulses.items():
+            self.pulsegen.add(k, v)
+
+        self.lockin = srs.Srs(self.rm, auxout_map=constants.lockin.auxout, **self.s['lockin'])
+        for k, v in self.s['lockin'].get('auxout', {}).items():
+            self.lockin.auxout(k, v)
+
+        self.curr_src = keithley_cs.KeithleyCS(self.rm, self.s['current_source']['dev'])
+        self.curr_src.set_remote_only()
+        self.curr_src.current = 0.
+        self.curr_src.set_sweep(self.s['current_source']['sweep'])
+
+        self.wavemeter = wavemeter.Wavemeter(self.rm, constants.wavemeter.dev)
+        
 def main(args):
     exec_aux_commands(args)
     params = {}
@@ -27,7 +50,7 @@ def main(args):
 
     s["daq"] = {"chs_n": 6, "freq":40e3, "time": 300e-3, "t0": -100e-3}
     cs = s["daq"]
-    daq = Measurement("Dev1", channels="ai0:"+str(cs["chs_n"]-1)
+    daq = DAQmx("Dev1", channels="ai0:"+str(cs["chs_n"]-1)
         , freq=cs["freq"], time=cs["time"]-cs["t0"], trig="PFI2", t0=cs["t0"])
 
     pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)

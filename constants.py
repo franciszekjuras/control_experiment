@@ -12,6 +12,7 @@ arduino.portmap = {
     "probeEn": 8,  
     "extra": 6  
 }
+arduino.reversed_polarity = ("pumpEn",)
 
 lockin = Struct()
 lockin.auxout = {
@@ -22,3 +23,7 @@ lockin.auxout = {
 
 daq = Struct()
 daq.labels = ("x", "y", "mon1", "mon2", "probe")
+
+wavemeter = Struct()
+wavemeter.dev = 'Wavemeter'
+wavemeter.channels = {'moglabs freq': 1, 'dl100 freq': 2}
