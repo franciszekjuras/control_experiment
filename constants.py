@@ -26,4 +26,4 @@ daq.labels = ("x", "y", "mon1", "mon2", "probe")
 
 wavemeter = Struct()
 wavemeter.dev = 'Wavemeter'
-wavemeter.channels = {'moglabs freq': 1, 'dl100 freq': 2}
+wavemeter.channels = {'moglabs': 1, 'dl100': 2}

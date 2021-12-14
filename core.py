@@ -9,6 +9,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 import constants
+import settings
 from labpy.devices import daqmx, arduinopulsegen, keithley_cs, srs, tb3000_aom_driver, wavemeter
 from labpy.types import Series, Average, NestedDict
 
@@ -16,8 +17,10 @@ class Core:
     def __init__(self, settings):
         self.rm = pyvisa.ResourceManager()
         self.s = NestedDict(settings)
+        self.base_settings = self.s.copy()
         self.params = {}
         self.init_devices()
+        time.sleep(0.1)
 
     def init_devices(self):
         self.daq = daqmx.DAQmx(**self.s['daq'])
@@ -28,9 +31,9 @@ class Core:
         self.pulsegen.xon(constants.arduino.reversed_polarity)
         pulses = timing['pulses']
         for k, seq in timing['triggers']:
-            pulses[k] = sum([[v, v + timing['trigger_width']] for v in seq],[])
+            pulses[k] = self._trigger_to_pulse(seq)
         for k, v in pulses.items():
-            self.pulsegen.add(k, v)
+            self.pulsegen.xadd(k, v)
 
         self.lockin = srs.Srs(self.rm, auxout_map=constants.lockin.auxout, **self.s['lockin'])
         for k, v in self.s['lockin'].get('auxout', {}).items():
@@ -41,52 +44,63 @@ class Core:
         self.curr_src.current = 0.
         self.curr_src.set_sweep(self.s['current_source']['sweep'])
 
+        self._dev_set = {'daq': self._daq_set, 'timing': self._pulsegen_set,
+                         'lockin': self._lockin_set, 'current_source': self._curr_src_set}
+
         self.wavemeter = wavemeter.Wavemeter(self.rm, constants.wavemeter.dev)
-        
+
+    def set(self, dic):
+        for path, v in dic:
+            dev, path = path[0], path[1:]
+            self._dev_set[dev](path, v)
+
+    def _daq_set(self, path, v):
+        raise ValueError(f"Can't set property {path} on daq")
+
+    def _timing_set(self, path, v):
+        k, prop = path[0], path[1:]
+        if k == 'triggers':
+            ch, = prop
+            self.pulsegen.xadd(ch, self._trigger_to_pulse(v))
+        elif k == 'pulses':
+            ch, = prop
+            self.pulsegen.xadd(ch, v)
+        else:
+            raise ValueError(f"Can't set property {path} on timing")
+
+    def _lockin_set(self, path, v):
+        k, prop = path[0], path[1:]
+        if k == 'settings':
+            setting, = prop
+            setattr(self.lockin, setting, v)
+        elif k == 'auxout':
+            ch, = prop
+            self.lockin.auxout(ch, v)
+        else:
+            raise ValueError(f"Can't set property {path} on lockin")
+
+    def _curr_src_set(self, path, v):
+        k, prop = path[0], path[1:]
+        if k == 'sweep' and len(prop) == 0:
+            self.curr_src.set_sweep(v)
+        else:
+            raise ValueError(f"Can't set property {path} on curr_src")
+
+    def _trigger_to_pulse(self, trigs):
+        return sum([[v, v + self.s['timing']['trigger_width']] for v in trigs],[])
+
+    def snap_params(self):
+        p = {}
+        chs = constants.wavemeter.channels
+        freqs = self.wavemeter.frequency(chs)
+        p['lasers'] = {ch + ' freq': v for ch, v in zip(chs, freqs)}
+        return p
+
+
 def main(args):
     exec_aux_commands(args)
-    params = {}
-    s = {}
-
-    s["daq"] = {"chs_n": 6, "freq":40e3, "time": 300e-3, "t0": -100e-3}
-    cs = s["daq"]
-    daq = DAQmx("Dev1", channels="ai0:"+str(cs["chs_n"]-1)
-        , freq=cs["freq"], time=cs["time"]-cs["t0"], trig="PFI2", t0=cs["t0"])
-
-    pulsegen = ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
-    pulsegen.time_unit = "ms"
-    pulsegen.xon(("pumpEn")) # Reversed polarity
-    constZt = [-210, 0]
-    constZt = sum([[v, v + 0.01] for v in constZt],[])
-    s["timing"] = {
-        "pumpEn": (-200, -5), "probeEn": (0, 300),
-        "daqTrig": (0, 0.01), "constZTrig": constZt
-    }
-    for k, v in s["timing"].items():
-        pulsegen.add(k, v)
-
-    lockin = Srs(rm, "Lock-in", auxout_map=constants.lockin.auxout)
-    s["lockin"] = {
-        'source': 'internal', 'reserve': 'low noise',
-        'frequency': 5e4, 'phase': -21., 'sensitivity': '100 uV',
-        'time_constant': '300 us', 'filter_slope': '24 dB/oct'
-    }
-    s["auxout"] = {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
-    lockin.setup(s["lockin"])
-    for k, v in s["auxout"].items():
-        lockin.auxout(k, v)
-
-    pulse_current = 100e-6
-    s["current source"] = {"pulse current": pulse_current}
-    curr_src = KeithleyCS(rm, "KEITHLEY")
-    curr_src.set_remote_only()
-    curr_src.current = 0.
-    curr_src.set_sweep((0, pulse_current))
-
-    wavemeter = Wavemeter(rm, "Wavemeter")
-    params["moglabs freq"], params["dl100 freq"] = wavemeter.frequency((1,2))
-    print(f"Moglabs (probe/pump) frequency: {params['moglabs freq']:.6f} THz\n"
-        f"DL100 (pump/repump) frequency: {params['dl100 freq']:.6f} THz")
+    setts = settings.load()
+    core = Core(settings=settings.load())
 
     plt.ion()
     fig, axs = plt.subplots(2)

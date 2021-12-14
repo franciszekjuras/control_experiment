@@ -1,3 +1,6 @@
+def load(file=None):
+    return default
+
 default = {
     'daq': {'dev': 'Dev1', 'channels': 'ai0:5', 'freq':40e3, 'time': 300e-3, 't0': -100e-3},
     'timing':{
