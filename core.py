@@ -181,15 +181,14 @@ def main(args):
     core = Core(settings=setts, rm=rm)
     core.run()
 
-    if args.save is not None:
+    input("d - discard, enter to confirm\n:")
+    if args.save is not None and c != 'd':
         savepath = Path("data/" + args.save.strip("/\\") + '/' + "SINGLE"
             + datetime.now().strftime("%y%m%d%H%M%S") + args.comment + ".pickle")
         print(savepath.parent)
         savepath.parent.mkdir(exist_ok=True, parents=True)
         with savepath.open("wb") as f:
             pickle.dump(core.result, f)
-
-    input("Press enter to exit...")
 
 def exec_aux_commands(args, rm):
     exit = False
