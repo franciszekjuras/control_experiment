@@ -30,7 +30,7 @@ class Core:
             self.rm, portmap=constants.arduino.portmap,  **timing)
         self.pulsegen.xon(constants.arduino.reversed_polarity)
         pulses = timing['pulses']
-        for k, seq in timing['triggers']:
+        for k, seq in timing['triggers'].items():
             pulses[k] = self._trigger_to_pulse(seq)
         for k, v in pulses.items():
             self.pulsegen.xadd(k, v)
@@ -48,7 +48,7 @@ class Core:
         for k, v in self._s["probe_aom"].items():
             setattr(self.timebase, k, v)
 
-        self._dev_set = {'daq': self._daq_set, 'timing': self._pulsegen_set,
+        self._dev_set = {'daq': self._daq_set, 'timing': self._timing_set,
                          'lockin': self._lockin_set, 'current_source': self._curr_src_set}
 
         self.wavemeter = wavemeter.Wavemeter(self.rm, constants.wavemeter.dev)
@@ -101,21 +101,21 @@ class Core:
     def snap_params(self):
         p = {}
         chs = constants.wavemeter.channels
-        freqs = self.wavemeter.frequency(chs)
+        freqs = self.wavemeter.frequency(chs.values())
         p['lasers'] = {ch + ' freq': v for ch, v in zip(chs, freqs)}
         return p
 
     @staticmethod
     def _create_figures(specs:dict={}, grid_specs:dict={}):
         figs = {}
-        for fig in specs:
+        for fig, spec in specs.items():
             if fig in grid_specs:
                 grid_spec = grid_specs[fig]
             else:
-                grid_spec = [max([el[1] for el in specs]) - 1]
+                grid_spec = [max([el[1] for el in spec]) + 1]
             f, _ = plt.subplots(*grid_spec)
             f.set_tight_layout(True)
-            figs[fig] = {'fig': f, 'spec': specs[fig]}
+            figs[fig] = {'fig': f, 'spec': spec}
         return figs
 
     @staticmethod
@@ -151,7 +151,7 @@ class Core:
         self.result.settings = self._s.copy()
         self.result.params = self.snap_params()
         plt.ion()
-        figs = Core._create_figures(plots, grid_specs).values()
+        figs = Core._create_figures(plots, grid_specs)
         t = self.daq.space()
         avgs = {k: Average() for k, _
             in zip(constants.daq.labels, range(self.daq.chs_n))}
@@ -172,27 +172,33 @@ class Core:
                     avgs[k].add(ser)
                 if self._s['averages'] != 1:
                     Core._plot(series, **figs.get('single', {}))
-            series_avg = {k: v.value() for k, v in avgs.items()}
+            series_avg = {k: v.value for k, v in avgs.items()}
             entry.update(series_avg)
             self.result.append(entry)
             Core._plot(entry, **figs.get('avg', {}))
 
-def main(args):
+def apply_args(setts, args):
+    setts['averages'] = args.repeat
+    if args.probe is not None:
+        setts['probe_aom']['amplitude'] = args.probe
+
+def main():    
+    args = parser.parse_args()
     rm = pyvisa.ResourceManager()
     exec_aux_commands(args, rm)
     setts = settings.load()
-    setts['averages'] = args.repeat
-    core = Core(settings=setts, rm=rm)
-    core.run()
+    apply_args(setts, args)
+    meas = Core(settings=setts, rm=rm)
+    meas.run(plots={'avg': [('x',0)]})
 
-    input("d - discard, enter to confirm\n:")
+    c = input("d - discard, enter to confirm\n:")
     if args.save is not None and c != 'd':
-        savepath = Path("data/" + args.save.strip("/\\") + '/' + "SINGLE"
-            + datetime.now().strftime("%y%m%d%H%M%S") + args.comment + ".pickle")
+        savepath = Path("data/" + args.save.strip("/\\") + '/' + "M"
+            + datetime.now().strftime("%y%m%d_%H%M%S") + args.comment + ".pickle")
         print(savepath.parent)
         savepath.parent.mkdir(exist_ok=True, parents=True)
         with savepath.open("wb") as f:
-            pickle.dump(core.result, f)
+            pickle.dump(meas.result, f)
 
 def exec_aux_commands(args, rm):
     exit = False
@@ -209,19 +215,19 @@ def exec_aux_commands(args, rm):
     if exit:
         sys.exit(0)
 
+parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence"
+    , formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument("-s", "--save", nargs='?', const="tests", default=None
+    , help="Save data to a file in 'data/tests' or in 'data/DIR' if DIR is specified", metavar="DIR(opt)")
+parser.add_argument("-c", "--comment", default="", help="Append COMMENT to saved file name")
+parser.add_argument("-r", "--repeat", type=int, default=3
+    , help="Repeat mesurement (average) N times", metavar='N')
+parser.add_argument("-se", "--sensitivity", default=None
+    , help="Lock-in sensitivity, formatted as string with unit, e.g '200 uV'", metavar='STR')
+parser.add_argument("-p", "--probe", type=float, default=None
+    , help="Probe AOM amplitude (in percents)", metavar='AMPLITUDE')
+parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
+parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")        
+
 if(__name__ == "__main__"):
-    parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence"
-        , formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-s", "--save", nargs='?', const="tests", default=None
-        , help="Save data to a file in 'data/tests' or in 'data/DIR' if DIR is specified", metavar="DIR(opt)")
-    parser.add_argument("-c", "--comment", default="", help="Append COMMENT to saved file name")
-    parser.add_argument("-r", "--repeat", type=int, default=3
-        , help="Repeat mesurement (average) N times", metavar='N')
-    parser.add_argument("-se", "--sensitivity", default=None
-        , help="Lock-in sensitivity, formatted as string with unit, e.g '200 uV'", metavar='STR')
-    parser.add_argument("-p", "--probe", type=float, default=None
-        , help="Probe AOM amplitude (in percents)", metavar='AMPLITUDE')
-    parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
-    parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
-    args = parser.parse_args()
-    main(args)
+    main()

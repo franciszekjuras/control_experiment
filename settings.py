@@ -17,8 +17,8 @@ default = {
     'lockin': {
         'dev': 'Lock-in',
         'settings': {
-            'source': 'internal', 'reserve': 'low noise',
-            'frequency': 5e4, 'phase': -21., 'sensitivity': '100 uV',
+            'source': 'internal', 'reserve': 'normal',
+            'frequency': 5e4, 'phase': -21., 'sensitivity': '1 mV',
             'time_constant': '300 us', 'filter_slope': '24 dB/oct'
         },
         'auxout': {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
