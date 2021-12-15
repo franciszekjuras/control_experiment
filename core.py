@@ -17,6 +17,7 @@ from labpy.series import Series, Average, from2darray
 from labpy.srs import Srs
 from labpy.wavemeter import Wavemeter
 from labpy.keithley_cs import KeithleyCS
+from labpy.tb3000_aom_driver import TB3000AomDriver as TimeBase
 
 rm = pyvisa.ResourceManager()
 
@@ -48,6 +49,8 @@ def main(args):
         'frequency': 5e4, 'phase': -21., 'sensitivity': '100 uV',
         'time_constant': '300 us', 'filter_slope': '24 dB/oct'
     }
+    if args.sensitivity is not None:
+        s["lockin"]["sensitivity"] = args.sensitivity
     s["auxout"] = {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
     lockin.setup(s["lockin"])
     for k, v in s["auxout"].items():
@@ -59,6 +62,13 @@ def main(args):
     curr_src.set_remote_only()
     curr_src.current = 0.
     curr_src.set_sweep((0, pulse_current))
+
+    timebase = TimeBase(rm, "TB3000")
+    if args.probe is None:
+        args.probe = timebase.amplitude
+    s["probe aom"] = {"amplitude": args.probe}
+    for k, v in s["probe aom"].items():
+        setattr(timebase, k, v)
 
     wavemeter = Wavemeter(rm, "Wavemeter")
     params["moglabs freq"], params["dl100 freq"] = wavemeter.frequency((1,2))
@@ -135,6 +145,10 @@ if(__name__ == "__main__"):
     parser.add_argument("-c", "--comment", default="", help="Append COMMENT to saved file name")
     parser.add_argument("-r", "--repeat", type=int, default=3
         , help="Repeat mesurement (average) N times", metavar='N')
+    parser.add_argument("-se", "--sensitivity", default=None
+        , help="Lock-in sensitivity, formatted as string with unit, e.g '200 uV'", metavar='STR')
+    parser.add_argument("-p", "--probe", type=float, default=None
+        , help="Probe AOM amplitude (in percents)", metavar='AMPLITUDE')
     parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
     parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
     args = parser.parse_args()
