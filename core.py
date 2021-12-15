@@ -44,10 +44,9 @@ class Core:
         self.curr_src.current = 0.
         self.curr_src.set_sweep(self._s['current_source']['sweep'])
 
-        
-        timebase = tb3000_aom_driver.TB3000AomDriver(self.rm, "TB3000")
+        self.timebase = tb3000_aom_driver.TB3000AomDriver(self.rm, "TB3000")
         for k, v in self._s["probe_aom"].items():
-            setattr(timebase, k, v)
+            setattr(self.timebase, k, v)
 
         self._dev_set = {'daq': self._daq_set, 'timing': self._pulsegen_set,
                          'lockin': self._lockin_set, 'current_source': self._curr_src_set}
