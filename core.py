@@ -178,11 +178,11 @@ class Core:
         plt.ion()
         figs = Core._create_figures(plots, grid_specs)
         t = self.daq.space()
-        avgs = {k: Average() for k, _
-            in zip(constants.daq.labels, range(self.daq.chs_n))}
 
         for shot_sett in scan_list:
             entry = {}
+            avgs = {k: Average() for k, _
+                in zip(constants.daq.labels, range(self.daq.chs_n))}
             self.set(shot_sett)
             entry['settings'] = shot_sett.copy()
             entry['params'] = self.snap_params()
