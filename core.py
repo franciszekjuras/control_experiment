@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pyvisa
 import PyDAQmx as dmx
 import numpy as np
@@ -6,12 +7,14 @@ import time
 import sys
 import pickle
 import argparse
+import json
 from pathlib import Path
 from datetime import datetime
 import constants
 import settings
 from labpy.devices import daqmx, arduinopulsegen, keithley_cs, srs, tb3000_aom_driver, wavemeter
 from labpy.types import Series, Average, NestedDict, DataList
+from labpy import utils
 
 class Core:
     def __init__(self, settings, rm = None):
@@ -29,7 +32,7 @@ class Core:
         self.pulsegen = arduinopulsegen.ArduinoPulseGen(
             self.rm, portmap=constants.arduino.portmap,  **timing)
         self.pulsegen.xon(constants.arduino.reversed_polarity)
-        pulses = timing['pulses']
+        pulses = timing['pulses'].copy()
         for k, seq in timing['triggers'].items():
             pulses[k] = self._trigger_to_pulse(seq)
         for k, v in pulses.items():
@@ -48,13 +51,16 @@ class Core:
         for k, v in self._s["probe_aom"].items():
             setattr(self.timebase, k, v)
 
-        self._dev_set = {'daq': self._daq_set, 'timing': self._timing_set,
-                         'lockin': self._lockin_set, 'current_source': self._curr_src_set}
+        self._dev_set = {
+            'daq': self._daq_set, 'timing': self._timing_set,
+            'lockin': self._lockin_set, 'current_source': self._curr_src_set,
+            'probe_aom': self._probe_set,
+        }
 
         self.wavemeter = wavemeter.Wavemeter(self.rm, constants.wavemeter.dev)
 
     def set(self, dic):
-        for path, v in dic:
+        for path, v in dic.items():
             dev, path = path[0], path[1:]
             self._dev_set[dev](path, v)
             self._s[path] = v
@@ -89,11 +95,15 @@ class Core:
             raise ValueError(f"Can't set property {path} on lockin")
 
     def _curr_src_set(self, path, v):
-        k, prop = path[0], path[1:]
-        if k == 'sweep' and len(prop) == 0:
+        k, = path
+        if k == 'sweep':
             self.curr_src.set_sweep(v)
         else:
             raise ValueError(f"Can't set property {path} on curr_src")
+
+    def _probe_set(self, path, v):
+        k, = path
+        setattr(self.timebase, k, v)
 
     def _trigger_to_pulse(self, trigs):
         return sum([[v, v + self._s['timing']['trigger_width']] for v in trigs],[])
@@ -134,12 +144,27 @@ class Core:
         for ax in axs:
             ax.clear()
         for id, pos, *opt in spec:
-            opt = opt[0] if len(opt) else {}
-            print(opt)
-            axs[pos].plot(*data[id].xy)
+            opt = opt[0] if len(opt) > 0 else {}
+            axs[pos].plot(*data[id].xy, **opt)
         # axs[1].set_xbound([-0.1e-3, 0.2e-3])
+        for ax in axs:
+            ax.legend(loc='best')
         fig.canvas.draw()
         fig.canvas.flush_events()
+
+    def save(self, dir=None, comment = ''): 
+        dir = dir if dir else 'quicksave'
+        savepath = Path("data/" + dir.strip("/\\") + '/' + "M"
+            + datetime.now().strftime("%y%m%d_%H%M%S") + comment + ".pickle")
+        savepath.parent.mkdir(exist_ok=True, parents=True)
+        with savepath.open("wb") as f:
+            pickle.dump(self.result, f)
+
+    def export_settings(self, filename='exported'):
+        savepath = Path("settings/" + filename + '.json')
+        savepath.parent.mkdir(exist_ok=True, parents=True)
+        with savepath.open("w") as f:
+            f.write(utils.json_dumps_compact(self.settings))
 
     def run(self, scan:dict[list]=None, plots:dict={}, grid_specs:dict={}):
         self.result = DataList()
@@ -182,23 +207,36 @@ def apply_args(setts, args):
     if args.probe is not None:
         setts['probe_aom']['amplitude'] = args.probe
 
+def scan_dict(paths: list[str|tuple]):
+    scan = {}
+    for path in paths:
+        if isinstance(path, str):
+            path = path.split('/')
+        path = tuple(path)
+        scan[path] = []
+    return scan
+
 def main():    
     args = parser.parse_args()
     rm = pyvisa.ResourceManager()
     exec_aux_commands(args, rm)
-    setts = settings.load()
+    setts = settings.load('settings')
     apply_args(setts, args)
     meas = Core(settings=setts, rm=rm)
-    meas.run(plots={'avg': [('x',0)]})
+    scan = scan_dict(['probe_aom/amplitude'])
+    probe_amp, = scan.values()
+    for i in np.linspace(10., 20., 6):
+        probe_amp.append(i)
+    meas.run(scan=scan, plots={'avg': [('x',0), ('probe', 1)]})
+    # print(meas.result.settings)
+    print(meas.result.params)
 
-    c = input("d - discard, enter to confirm\n:")
-    if args.save is not None and c != 'd':
-        savepath = Path("data/" + args.save.strip("/\\") + '/' + "M"
-            + datetime.now().strftime("%y%m%d_%H%M%S") + args.comment + ".pickle")
-        print(savepath.parent)
-        savepath.parent.mkdir(exist_ok=True, parents=True)
-        with savepath.open("wb") as f:
-            pickle.dump(meas.result, f)
+    c = input("(d)iscard, (s)ave, e(x)port settings, enter to confirm\n:")
+    if 's' in c or args.save and 'd' not in c:
+        meas.save(args.save, args.comment)
+    if 'x' in c:
+        settings.save(meas.result.settings)
+
 
 def exec_aux_commands(args, rm):
     exit = False
@@ -227,7 +265,7 @@ parser.add_argument("-se", "--sensitivity", default=None
 parser.add_argument("-p", "--probe", type=float, default=None
     , help="Probe AOM amplitude (in percents)", metavar='AMPLITUDE')
 parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
-parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")        
+parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
 
 if(__name__ == "__main__"):
     main()
