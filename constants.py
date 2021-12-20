@@ -13,6 +13,7 @@ arduino.portmap = {
     "extra": 6  
 }
 arduino.reversed_polarity = ("pumpEn",)
+arduino.aom_enable = ("probeEn",)
 
 lockin = Struct()
 lockin.auxout = {

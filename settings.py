@@ -2,15 +2,15 @@ from labpy import utils
 import json
 from pathlib import Path
 
-def load(filename=None):
-    if filename:
-        with open("settings/" + filename + '.json', 'r') as f:
+def load(path=None):
+    if path:
+        with open(path, 'r') as f:
             return json.load(f)
     else:
         return default
 
-def save(settings, filename='exported'):
-        savepath = Path("settings/" + filename + '.json')
+def save(settings, path):
+        savepath = Path(path)
         savepath.parent.mkdir(exist_ok=True, parents=True)
         with savepath.open("w") as f:
             f.write(utils.json_dumps_compact(settings))

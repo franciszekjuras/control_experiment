@@ -7,31 +7,39 @@ import time
 import sys
 import pickle
 import argparse
-import json
 from pathlib import Path
 from datetime import datetime
 import constants
-import settings
+from settings import load as sett_load, save as sett_save
 from labpy.devices import daqmx, arduinopulsegen, keithley_cs, srs, tb3000_aom_driver, wavemeter
 from labpy.types import Series, Average, NestedDict, DataList
 from labpy import utils
 
 class Core:
-    def __init__(self, settings, rm = None, args=None):
-        self.rm = rm if rm is not None else pyvisa.ResourceManager()
+    def __init__(self, settings='settings', rm = None, args=None):
+        self.rm = rm if rm else pyvisa.ResourceManager()
         if not isinstance(settings, dict):
-            settings = 
+            sett_path = 'settings/' + settings + '.json' if settings else None
+            settings = sett_load(sett_path)
         self._s = NestedDict(settings)
-        if args is not None:
-            self._apply_args(args)
+        self._args = args if args else parser.parse_args()
+        self._apply_args()
         self.params = {}
 
     def _apply_args(self, args):
-        self._s['averages'] = args.repeat
-        if args.probe:
-            self._s['probe_aom']['amplitude'] = args.probe
+        self._s['averages'] = self._args.repeat
+        if self._args.probe:
+            self._s['probe_aom']['amplitude'] = self._args.probe
 
-    def init_devices(self):
+    def _init_devices(self):
+        if self._args.list:
+            utils.list_visa_devices(self.rm)
+            sys.exit()
+        if self._args.aom:
+            pulsegen = arduinopulsegen.ArduinoPulseGen(self.rm, "Arduino", portmap=constants.arduino.portmap)
+            pulsegen.xon(constants.arduino.aom_enable)
+            sys.exit()
+
         self.daq = daqmx.DAQmx(**self._s['daq'])
 
         timing = self._s['timing']
@@ -76,7 +84,7 @@ class Core:
 
     @property
     def settings(self):
-        return self._s.copy()
+        return self._s
 
     def _daq_set(self, path, v):
         raise ValueError(f"Can't set property {path} on daq")
@@ -165,13 +173,15 @@ class Core:
         fig.canvas.draw()
         fig.canvas.flush_events()
 
-    def save(self, dir=None, comment = ''): 
-        dir = dir if dir else 'quicksave'
-        savepath = Path("data/" + dir.strip("/\\") + '/' + "M"
-            + datetime.now().strftime("%y%m%d_%H%M%S") + comment + ".pickle")
-        savepath.parent.mkdir(exist_ok=True, parents=True)
-        with savepath.open("wb") as f:
-            pickle.dump(self.result, f)
+    def save(self, dir=None, comment=None):
+        dir = dir if dir is not None else self._args.save
+        comment = comment if comment is not None else self._args.comment
+        if dir:
+            savepath = Path("data/" + dir.strip("/\\") + '/' + "M"
+                + datetime.now().strftime("%y%m%d_%H%M%S") + comment + ".pickle")
+            savepath.parent.mkdir(exist_ok=True, parents=True)
+            with savepath.open("wb") as f:
+                pickle.dump(self.result, f)
 
     def export_settings(self, filename='exported'):
         savepath = Path("settings/" + filename + '.json')
@@ -180,6 +190,8 @@ class Core:
             f.write(utils.json_dumps_compact(self.settings))
 
     def run(self, scan:dict[list]=None, plots:dict={}, grid_specs:dict={}):
+        self._init_devices()
+
         self.result = DataList()
         if scan is not None:
             scan_list = Core._zip_scan(scan)

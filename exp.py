@@ -4,12 +4,7 @@ import pyvisa
 import numpy as np
 from labpy import dsp
 
-args = core.parser.parse_args()
-rm = pyvisa.ResourceManager()
-core.exec_aux_commands(args, rm)
-setts = settings.load('settings')
-core.apply_args(setts, args)
-meas = core.Core(settings=setts, rm=rm, args=args)
+meas = core.Core()
 
 scan = None
 # scan = core.scan_dict(['probe_aom/amplitude'])
@@ -37,8 +32,10 @@ plots = {
 meas.run(scan=scan, plots=plots)
 print(meas.result.params)
 
-c = input("(d)iscard, (s)ave, e(x)port settings, enter to confirm\n:")
-if 's' in c or args.save and 'd' not in c:
-    meas.save(args.save, args.comment)
+c = input("(d)iscard, (q)uicksave, e(x)port settings, enter to confirm\n:")
+if 'd' not in c:
+    meas.save()
+if 'q' in c:
+    meas.save('quicksave')
 if 'x' in c:
-    settings.save(meas.result.settings)
+    meas.export_settings()
