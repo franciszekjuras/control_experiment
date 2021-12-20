@@ -17,15 +17,21 @@ from labpy.types import Series, Average, NestedDict, DataList
 from labpy import utils
 
 class Core:
-    def __init__(self, settings, rm = None):
+    def __init__(self, settings, rm = None, args=None):
         self.rm = rm if rm is not None else pyvisa.ResourceManager()
+        if not isinstance(settings, dict):
+            settings = 
         self._s = NestedDict(settings)
-        # self.base_settings = self._s.copy()
+        if args is not None:
+            self._apply_args(args)
         self.params = {}
-        self._init_devices()
-        time.sleep(0.1)
 
-    def _init_devices(self):
+    def _apply_args(self, args):
+        self._s['averages'] = args.repeat
+        if args.probe:
+            self._s['probe_aom']['amplitude'] = args.probe
+
+    def init_devices(self):
         self.daq = daqmx.DAQmx(**self._s['daq'])
 
         timing = self._s['timing']
@@ -59,11 +65,14 @@ class Core:
 
         self.wavemeter = wavemeter.Wavemeter(self.rm, constants.wavemeter.dev)
 
+        time.sleep(0.1)
+
     def set(self, dic):
         for path, v in dic.items():
             dev, path = path[0], path[1:]
-            self._dev_set[dev](path, v)
-            self._s[path] = v
+            if dev:
+                self._dev_set[dev](path, v)
+                self._s[path] = v
 
     @property
     def settings(self):
@@ -144,8 +153,12 @@ class Core:
         for ax in axs:
             ax.clear()
         for id, pos, *opt in spec:
-            opt = opt[0] if len(opt) > 0 else {}
-            axs[pos].plot(*data[id].xy, **opt)
+            kwargs = opt[0] if len(opt) > 0 else {}
+            fun = opt[1] if len(opt) > 1 else None
+            if fun is None:
+                axs[pos].plot(*data[id].xy, **kwargs)
+            else:
+                fun(axs[pos], data[id], kwargs)
         # axs[1].set_xbound([-0.1e-3, 0.2e-3])
         for ax in axs:
             ax.legend(loc='best')
@@ -201,11 +214,6 @@ class Core:
             entry.update(series_avg)
             self.result.append(entry)
             Core._plot(entry, **figs.get('avg', {}))
-
-def apply_args(setts, args):
-    setts['averages'] = args.repeat
-    if args.probe is not None:
-        setts['probe_aom']['amplitude'] = args.probe
 
 def scan_dict(paths: list[str|tuple]):
     scan = {}
@@ -265,7 +273,7 @@ parser.add_argument("-se", "--sensitivity", default=None
 parser.add_argument("-p", "--probe", type=float, default=None
     , help="Probe AOM amplitude (in percents)", metavar='AMPLITUDE')
 parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
-parser.add_argument("-a", "--aom", action="store_true", help="Test AOMs operation and exit")
+parser.add_argument("-a", "--aom", action="store_true", help="Enable AOMs operation and exit")
 
 if(__name__ == "__main__"):
     main()
