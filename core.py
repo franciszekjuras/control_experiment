@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 import constants
-from settings import load as sett_load, save as sett_save
+import settings as stngs
 from labpy.devices import daqmx, arduinopulsegen, keithley_cs, srs, tb3000_aom_driver, wavemeter
 from labpy.types import Series, Average, NestedDict, DataList
 from labpy import utils
@@ -20,7 +20,7 @@ class Core:
         self.rm = rm if rm else pyvisa.ResourceManager()
         if not isinstance(settings, dict):
             sett_path = 'settings/' + settings + '.json' if settings else None
-            settings = sett_load(sett_path)
+            settings = stngs.load(sett_path)
         self._s = NestedDict(settings)
         self._args = args if args else parser.parse_args()
         self._apply_args()
@@ -184,10 +184,7 @@ class Core:
                 pickle.dump(self.result, f)
 
     def export_settings(self, filename='exported'):
-        savepath = Path("settings/" + filename + '.json')
-        savepath.parent.mkdir(exist_ok=True, parents=True)
-        with savepath.open("w") as f:
-            f.write(utils.json_dumps_compact(self.settings))
+        stngs.save(self.result.settings, "settings/" + filename + '.json')
 
     def run(self, scan:dict[list]=None, plots:dict={}, grid_specs:dict={}):
         self._init_devices()
@@ -236,43 +233,6 @@ def scan_dict(paths: list[str|tuple]):
         scan[path] = []
     return scan
 
-def main():    
-    args = parser.parse_args()
-    rm = pyvisa.ResourceManager()
-    exec_aux_commands(args, rm)
-    setts = settings.load('settings')
-    apply_args(setts, args)
-    meas = Core(settings=setts, rm=rm)
-    scan = scan_dict(['probe_aom/amplitude'])
-    probe_amp, = scan.values()
-    for i in np.linspace(10., 20., 6):
-        probe_amp.append(i)
-    meas.run(scan=scan, plots={'avg': [('x',0), ('probe', 1)]})
-    # print(meas.result.settings)
-    print(meas.result.params)
-
-    c = input("(d)iscard, (s)ave, e(x)port settings, enter to confirm\n:")
-    if 's' in c or args.save and 'd' not in c:
-        meas.save(args.save, args.comment)
-    if 'x' in c:
-        settings.save(meas.result.settings)
-
-
-def exec_aux_commands(args, rm):
-    exit = False
-    if args.list:
-        exit = True
-        res = [(str(inst.alias), str(inst.resource_name)) for inst in rm.list_resources_info().values()]
-        res.insert(0, ("Alias", "Resource name"))
-        for el in res:
-            print(f"{el[0]:>15}  {el[1]}")
-    if args.aom:
-        exit = True
-        pulsegen = arduinopulsegen.ArduinoPulseGen(rm, "Arduino", portmap=constants.arduino.portmap)
-        pulsegen.xon(("probeEn"))
-    if exit:
-        sys.exit(0)
-
 parser = argparse.ArgumentParser(description="Program for tweaking experimental sequence"
     , formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("-s", "--save", nargs='?', const="tests", default=None
@@ -286,6 +246,3 @@ parser.add_argument("-p", "--probe", type=float, default=None
     , help="Probe AOM amplitude (in percents)", metavar='AMPLITUDE')
 parser.add_argument("-l", "--list", action="store_true", help="List available devices and exit")
 parser.add_argument("-a", "--aom", action="store_true", help="Enable AOMs operation and exit")
-
-if(__name__ == "__main__"):
-    main()
