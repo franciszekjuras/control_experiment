@@ -2,6 +2,6 @@
 /ve*/
 __pycache__/
 /*.patch
-/*_test.py
+/*_test.*
 /data/
 /settings/

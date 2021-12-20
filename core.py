@@ -206,7 +206,7 @@ class Core:
             avgs = {k: Average() for k, _
                 in zip(constants.daq.labels, range(self.daq.chs_n))}
             self.set(shot_sett)
-            entry['settings'] = shot_sett.copy()
+            entry['settings'] = self._s.copy()
             entry['params'] = self.snap_params()
             for _ in range(self._s["averages"]):
                 self.curr_src.init()
