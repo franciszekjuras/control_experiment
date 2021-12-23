@@ -44,7 +44,8 @@ default = {
     },
     'current_source': {
         'dev': 'KEITHLEY',
-        'sweep': [0, 100e-6]
+        'sweep': [0, 100e-6],
+        'field_coef': 4e6
     },
     'probe_aom': {
         'dev': 'TB3000',
