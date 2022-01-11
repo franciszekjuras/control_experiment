@@ -40,6 +40,7 @@ default = {
             'frequency': 5e4, 'phase': -21., 'sensitivity': '1 mV',
             'time_constant': '300 us', 'filter_slope': '24 dB/oct'
         },
+        'normalization': {'sensitivity': '1 V', 'phase': -21.},
         'auxout': {"aom1": 6., "aom2": 6, "pulseAmp": 0.5}
     },
     'current_source': {

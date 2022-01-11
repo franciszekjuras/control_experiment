@@ -12,8 +12,8 @@ scan = None
 # for i in np.linspace(10, 20, 6):
 #     probe_amp.append(i)
 
-# scan = core.scan_dict(['timing/pulses/pulseZ'])
-scan = {('',): [None]*100}
+scan = core.scan_dict(['timing/pulses/pulseZ'])
+# scan = {('',): [None]*100}
 pulse, = scan.values()
 for i in np.linspace(0., 0.2, 11):
     pulse.append([-1., -0.99 + i])

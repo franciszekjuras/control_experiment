@@ -17,7 +17,7 @@ from labpy import utils
 
 class Core:
     def __init__(self, settings='settings', rm = None, args=None):
-        self.rm = rm if rm else pyvisa.ResourceManager()
+        self.rm = rm if rm is not None else pyvisa.ResourceManager()
         if not isinstance(settings, dict):
             sett_path = 'settings/' + settings + '.json' if settings else None
             settings = stngs.load(sett_path)
@@ -186,7 +186,7 @@ class Core:
     def export_settings(self, filename='exported'):
         stngs.save(self.result.settings, "settings/" + filename + '.json')
 
-    def run(self, scan:dict[list]=None, plots:dict={}, grid_specs:dict={}):
+    def run(self, scan:dict[list]=None, plots:dict={}, grid_specs:dict={}, normalize=True):
         self._init_devices()
 
         self.result = DataList()
@@ -223,6 +223,19 @@ class Core:
             entry.update(series_avg)
             self.result.append(entry)
             Core._plot(entry, **figs.get('avg', {}))
+        if normalize:
+            input('Obstruct one photodiode channel and press enter...')
+            for shot_sett, entry in zip(scan_list, self.result):
+                self.set(shot_sett)
+                self.lockin.setup(self._s['lockin']['normalization'])
+                self.curr_src.init()
+                self.daq.start()
+                time.sleep(-self.daq.t0)
+                self.pulsegen.run()
+                data = self.daq.read()
+                series = dict(zip(constants.daq.labels, Series.from2darray(data, t)))
+                entry['norm_x'] = series['x']
+                entry['norm_y'] = series['y']
 
 def scan_dict(paths: list[str|tuple]):
     scan = {}
