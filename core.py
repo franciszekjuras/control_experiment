@@ -24,7 +24,6 @@ class Core:
         self._s = NestedDict(settings)
         self._args = args if args else parser.parse_args()
         self._apply_args()
-        self.params = {}
 
     def _apply_args(self, args):
         self._s['averages'] = self._args.repeat
@@ -206,7 +205,8 @@ class Core:
             avgs = {k: Average() for k, _
                 in zip(constants.daq.labels, range(self.daq.chs_n))}
             self.set(shot_sett)
-            entry['settings'] = self._s.copy()
+            # entry['settings'] = self._s.copy() # Save full settings
+            entry['settings'] = shot_sett # Save shot settings only
             entry['params'] = self.snap_params()
             for _ in range(self._s["averages"]):
                 self.curr_src.init()
@@ -234,8 +234,8 @@ class Core:
                 self.pulsegen.run()
                 data = self.daq.read()
                 series = dict(zip(constants.daq.labels, Series.from2darray(data, t)))
-                entry['norm_x'] = series['x']
-                entry['norm_y'] = series['y']
+                entry['x_norm'] = series['x']
+                entry['y_norm'] = series['y']
 
 def scan_dict(paths: list[str|tuple]):
     scan = {}
