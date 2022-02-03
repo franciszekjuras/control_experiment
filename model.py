@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
+from scipy.optimize import differential_evolution, curve_fit
 from labpy.types import Series, NestedDict, DataList
 from labpy import dsp
 from labpy import utils
@@ -16,9 +17,10 @@ class Model:
         '''dict: Bounds for fit parameters. Estimated from data if not specified,
         except decay parameters `gr`, `g1` and `g2`'''
         self._v = verbose
-        self.hyper_params = {'osc_freq_window': 0.1, 'filter_atten_dB': 52.}
+        self.hyper_params = {'osc_freq_window': 0.1, 'osc_fft_rel_density': 1000,
+                             'filter_atten_dB': 52., 'lp_est_dec_freq': 1e3}
         self.result = []
-        '''Model fit results'''
+        '''list[dict]: Model fit results'''
         # self.osc_freq = data.settings['current_source']['sweep'][-1] \
         #                 * data.settings['current_source'].get('field_coef', 4e6)
 
@@ -50,11 +52,56 @@ class Model:
             print("Normalization not implemented. Normalization data ignored.")
         else:
             if self._v: print('No normalization data. Fitting to raw signal.')
-        fit_bp_res = self._fit_bp(rotbp, osc_freq)
+        bp_best_fit, bp_cov_matrix = self._fit_bp(rotbp, osc_freq)
+        lp_best_fit, lp_cov_matrix = self._fit_lp(rotlp)
+        best_fit_l = list(bp_best_fit) + list(lp_best_fit)
+        fit_sd_l = list(np.sqrt(np.diag(bp_cov_matrix))) + list(np.sqrt(np.diag(lp_cov_matrix)))
+        best_fit = dict(zip(self.params, best_fit_l))
+        fit_sd = dict(zip(self.params, fit_sd_l))
+        return {'best fit': best_fit, 'fit sd': fit_sd}
+
+    def _fit_lp(self, rot):        
+        bounds = self._bounds_lp(rot)
+        estimates = self._estimates_lp(rot, bounds)
+        if self._v: print('lp est:', estimates)
+        res = curve_fit(model_lp_gen(), *rot.xy, estimates, bounds=list(zip(*bounds)))
+        return res
 
     def _fit_bp(self, rot, osc_freq):
         bounds = self._bounds_bp(rot, osc_freq)
-        pass
+        estimates = self._estimates_bp(rot, osc_freq, bounds)
+        if self._v: print('bp est:', estimates)
+        res = curve_fit(model_bp, *rot.xy, estimates, bounds=list(zip(*bounds)))
+        return res
+
+    def _estimates_lp(self, rot: Series, bounds):
+        rot = rot.decimate(freq=self.hyper_params['lp_est_dec_freq'])
+        est = differential_evolution(chi_squared, bounds, args=(rot.x, rot.y, model_lp_gen()))
+        # Multiprocessing resulted in slower computation :(
+        # est = differential_evolution(chi_squared, bounds, args=(rot.x, rot.y, model_lp_gen()), workers=1, updating='deferred')
+        return list(est.x)
+
+    def _estimates_bp(self, rot, osc_freq, bounds):
+        est = {}
+        pad = self.hyper_params['osc_fft_rel_density'] / osc_freq / rot.span
+        if self._v: print(f'pad: {pad:.1f}')
+        if pad < 1.:
+            pad = 1.
+        fft = dsp.fft(rot, pad = pad)
+        freq_bound = [osc_freq * (1 + s * self.hyper_params['osc_freq_window']) for s in [-1, 1]]
+        fft = fft.slice(*freq_bound)
+        maxi = np.argmax(fft.abs().y)
+        ph = fft.angle().y[maxi] + (np.pi/2)
+        if ph > np.pi: ph -= 2 * np.pi
+        est['ph'] = ph
+        est['f'] = fft.x[maxi]
+        est['r'] = np.max(rot.cut(r=2./osc_freq).abs().y)
+        est['gr'] = dsp.fwhm(fft.abs(), est['f']) * 2
+        for idx, bound in zip(self.params[0:4], bounds):
+            if not utils.in_bounds(est[idx], bound):
+                if self._v: print(f"Parmater {idx} estimation ({est[idx]}) is out of bounds {bound}. Changing to bounds average.")
+                est[idx] = np.average(bound)
+        return [est[idx] for idx in self.params[0:4]]
 
     def _bounds_bp(self, rot, osc_freq):
         bounds = self.bounds.copy()
@@ -105,8 +152,8 @@ class Model:
             if self._v: print("No frequency peak found")
         return osc_freq
 
-def chi_squared_gen(model):
-    return lambda params, x, y: np.sum(np.square(model(x, *params) - y))
+def chi_squared(params, x, y, model):
+    return np.sum(np.square(model(x, *params) - y))
 
 def model_bp(x, r, gr, f, ph):
     return r * np.sin(2*np.pi*f * x + ph) * np.exp(-gr * x)
