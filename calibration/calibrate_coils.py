@@ -12,7 +12,8 @@ def main(args):
     bounds = {'gr': [15., 50.], 'g1': [2., 10.], 'g2': [15., 50.]}
     model = Model(data, verbose=True, bounds=bounds)
     model.process()
-    pprint(model.result, sort_dicts=False)
+    model.apply(data[0]['x'].x)
+    # pprint(model.result, sort_dicts=False)
     
 
 if __name__ == "__main__":

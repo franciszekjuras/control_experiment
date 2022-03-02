@@ -28,6 +28,16 @@ class Model:
     def params(self):
         return ('r', 'gr', 'f', 'ph', 'c1', 'g1', 'c2', 'g2', 'off')
 
+    def apply(self, x, params=None):
+        x = np.asarray(x)
+        if params is None:
+            return [self.apply(x, r['best fit']) for r in self.result]
+        if isinstance(params, dict):
+            params = [params[i] for i in self.params]
+        bp_params, lp_params = params[0:4], params[4:]
+        y = model_bp(x, *bp_params) + model_lp_gen()(x, *lp_params)
+        return Series(y, x)
+
     def process(self):
         '''Process measruements (e.g. normalize) and fit model.
         Result is stored in `result` attribute
@@ -52,26 +62,44 @@ class Model:
             print("Normalization not implemented. Normalization data ignored.")
         else:
             if self._v: print('No normalization data. Fitting to raw signal.')
-        bp_best_fit, bp_cov_matrix = self._fit_bp(rotbp, osc_freq)
-        lp_best_fit, lp_cov_matrix = self._fit_lp(rotlp)
-        best_fit_l = list(bp_best_fit) + list(lp_best_fit)
-        fit_sd_l = list(np.sqrt(np.diag(bp_cov_matrix))) + list(np.sqrt(np.diag(lp_cov_matrix)))
-        best_fit = dict(zip(self.params, best_fit_l))
-        fit_sd = dict(zip(self.params, fit_sd_l))
+        bp_best_fit, bp_sd = self._fit_bp(rotbp, osc_freq)
+        lp_best_fit, lp_sd = self._fit_lp(rotlp)
+        # best_fit_l = list(bp_best_fit) + list(lp_best_fit)
+        # fit_sd_l = list(np.sqrt(np.diag(bp_cov_matrix))) + list(np.sqrt(np.diag(lp_cov_matrix)))
+        best_fit = dict(zip(self.params, bp_best_fit + lp_best_fit))
+        fit_sd = dict(zip(self.params, bp_sd + lp_sd))
         return {'best fit': best_fit, 'fit sd': fit_sd}
 
     def _fit_lp(self, rot):        
         bounds = self._bounds_lp(rot)
         estimates = self._estimates_lp(rot, bounds)
         if self._v: print('lp est:', estimates)
-        res = curve_fit(model_lp_gen(), *rot.xy, estimates, bounds=list(zip(*bounds)))
+        model = model_lp_gen()
+        res = curve_fit(model, *rot.xy, estimates, bounds=list(zip(*bounds)))
+        bounds_d = dict(zip(self.params[-5:], bounds))
+        fit = dict(zip(self.params[-5:], res[0]))
+        slow_decay = True
+        if not utils.in_bounds(fit['g1'], bounds_d['g1'], rel=0.05):
+            slow_decay = False
+            model = model_lp_gen(slow_decay=slow_decay)
+            sp = model.strip_params
+            res = curve_fit(model, *rot.xy, sp(estimates), bounds=list(zip(*sp(bounds))))
+            fit = dict(zip(self.params[-5:], model.full_params(res[0])))
+        if not utils.in_bounds(fit['g2'], bounds_d['g2'], rel=0.05):
+            model = model_lp_gen(slow_decay=slow_decay, fast_decay=False)
+            sp = model.strip_params
+            res = curve_fit(model, *rot.xy, sp(estimates), bounds=list(zip(*sp(bounds))))
+            # fit = dict(zip(self.params[-5:], model.full_params(res[0])))
+        res = [res[0], np.sqrt(np.diag(res[1]))]
+        res = [model.full_params(p) for p in res]
         return res
 
     def _fit_bp(self, rot, osc_freq):
         bounds = self._bounds_bp(rot, osc_freq)
         estimates = self._estimates_bp(rot, osc_freq, bounds)
         if self._v: print('bp est:', estimates)
-        res = curve_fit(model_bp, *rot.xy, estimates, bounds=list(zip(*bounds)))
+        res = curve_fit(model_bp, *rot.xy, estimates, bounds=list(zip(*bounds)))        
+        res = [list(res[0]), list(np.sqrt(np.diag(res[1])))]
         return res
 
     def _estimates_lp(self, rot: Series, bounds):
@@ -191,8 +219,7 @@ class model_lp_gen:
             p += [self._offset]
         return p
 
-    def __call__(self, *args):
-        x, *params = args
+    def __call__(self, x, *params):
         c1, g1, c2, g2, off = self.full_params(params)
         res = np.full_like(x, off, dtype=np.float64)
         if c1 != 0.:
